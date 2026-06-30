@@ -1,0 +1,155 @@
+/*
+ * RK-XCZU15EG-F  -  board-level device-tree overrides
+ * -----------------------------------------------------------------------------
+ * This file is layered on top of the auto-generated base device tree
+ * (pcw.dtsi / pl.dtsi / zynqmp.dtsi) produced from the hardware hand-off
+ * (board/hw-handoff/IMAGE_15EG.xsa) by board/device-tree/gen_devicetree.sh.
+ *
+ * It only contains BOARD specifics that the generator cannot know:
+ *   - on-board LEDs / push-buttons (PS MIO + PL EMIO GPIO)
+ *   - the Realtek RTL8211F gigabit PHY on GEM3 (RGMII)
+ *   - eMMC (SDHCI0) / micro-SD (SDHCI1) tuning
+ *   - the Macronix MX25U51245G dual-parallel QSPI boot flash layout
+ *   - the AT24 EEPROM on I2C1
+ *
+ * Hardware facts come from the vendor PetaLinux BSP (image_15eg.bsp),
+ * the XCZU15EG_Base_Config PS preset and the base-board schematic.
+ *
+ * GPIO numbering on the ZynqMP `gpio` controller:
+ *      MIO  0..77   ->  gpio 0..77
+ *      EMIO 0..      ->  gpio 78..   (only valid when the PL is configured)
+ */
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	model = "RK-XCZU15EG-F (XCZU15EG-FFVB1156-2-I)";
+	compatible = "riguke,rk-xczu15eg-f", "xlnx,zynqmp";
+
+	chosen {
+		bootargs = "earlycon console=ttyPS0,115200 clk_ignore_unused cma=512M root=/dev/mmcblk1p2 rw rootwait";
+		stdout-path = "serial0:115200n8";
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		/* tri-colour LED on the core board (driven from PL EMIO) */
+		led-core-y { label = "core_y"; gpios = <&gpio 78 GPIO_ACTIVE_LOW>; default-state = "off"; };
+		led-core-g { label = "core_g"; gpios = <&gpio 79 GPIO_ACTIVE_LOW>; default-state = "off"; };
+		led-core-r { label = "core_r"; gpios = <&gpio 80 GPIO_ACTIVE_LOW>; default-state = "off"; };
+
+		/* PS user LEDs (MIO) */
+		led-ps1 { label = "ps_led1"; gpios = <&gpio 35 GPIO_ACTIVE_HIGH>; default-state = "off"; };
+		led-ps2 { label = "ps_led2"; gpios = <&gpio 26 GPIO_ACTIVE_HIGH>; default-state = "off"; };
+		led-ps3 { label = "ps_led3"; gpios = <&gpio 31 GPIO_ACTIVE_HIGH>; linux,default-trigger = "heartbeat"; };
+		led-ps4 { label = "ps_led4"; gpios = <&gpio 41 GPIO_ACTIVE_HIGH>; linux,default-trigger = "timer"; };
+
+		/* PL user LEDs (EMIO) - require a configured PL bitstream */
+		led-pl1 { label = "pl_led1"; gpios = <&gpio 81 GPIO_ACTIVE_HIGH>; default-state = "off"; };
+		led-pl2 { label = "pl_led2"; gpios = <&gpio 82 GPIO_ACTIVE_HIGH>; default-state = "off"; };
+	};
+
+	keys {
+		compatible = "gpio-keys";
+		autorepeat;
+
+		key-ps1 { label = "ps_key1"; gpios = <&gpio 40 GPIO_ACTIVE_LOW>; linux,code = <KEY_UP>;    gpio-key,wakeup; autorepeat; };
+		key-ps2 { label = "ps_key2"; gpios = <&gpio 34 GPIO_ACTIVE_LOW>; linux,code = <KEY_DOWN>;  gpio-key,wakeup; autorepeat; };
+		key-pl1 { label = "pl_key1"; gpios = <&gpio 83 GPIO_ACTIVE_LOW>; linux,code = <KEY_LEFT>;  gpio-key,wakeup; autorepeat; };
+		key-pl2 { label = "pl_key2"; gpios = <&gpio 84 GPIO_ACTIVE_LOW>; linux,code = <KEY_RIGHT>; gpio-key,wakeup; autorepeat; };
+	};
+};
+
+/* ---- PRIMARY Ethernet : PS GEM3 (MIO 64..77) -> RTL8211F (RGMII) ----
+ * This is the NIC used for SSH.  pcw.dtsi (generated from the PS preset)
+ * already sets status="okay" and phy-mode="rgmii-id"; the Cadence GEM (macb)
+ * driver auto-scans GEM3's MDIO bus for the PHY, exactly as the factory image
+ * does.  We only stamp a MAC here; override per board if you like.
+ */
+&gem3 {
+	local-mac-address = [00 0a 35 00 22 01];
+};
+
+/* ---- SECONDARY Ethernet : PS GEM0 -> PL gmii-to-rgmii bridge -> RTL8211F ----
+ * The base hardware routes a second GEM through a PL "gmii_to_rgmii" core out
+ * to the PL-side RGMII pins (see board/constraints, eth_* LVCMOS18) and a
+ * second RTL8211F at MDIO address 1.  The generated pcw.dtsi references this
+ * PHY by the label `phy1`; we define it here.
+ *
+ * NOTE: this block matches the bundled golden bitstream
+ * (board/hw-handoff/IMAGE_15EG_wrapper.bit).  If you regenerate the hardware
+ * from hw/create_project.tcl WITHOUT a gmii_to_rgmii core, delete this block
+ * (the &psu_ethernet_0_mdio label will not exist in that design).
+ */
+&psu_ethernet_0_mdio {
+	phy1: ethernet-phy@1 {
+		reg = <0x1>;
+	};
+};
+
+/* ---- SDHCI0 : on-board eMMC (8-bit, non-removable) ---- */
+&sdhci0 {
+	status = "okay";
+	non-removable;
+	disable-wp;
+	bus-width = <8>;
+	xlnx,mio-bank = <0>;
+};
+
+/* ---- SDHCI1 : micro-SD card slot (rootfs lives here -> mmcblk1) ---- */
+&sdhci1 {
+	status = "okay";
+	disable-wp;
+	no-1-8-v;
+	xlnx,mio-bank = <1>;
+};
+
+/* ---- QSPI boot flash : Macronix MX25U51245G x2 in dual-parallel (128 MB) ---- */
+&qspi {
+	status = "okay";
+	is-dual = <1>;
+	num-cs = <2>;
+
+	flash@0 {
+		compatible = "mx25u51245g", "jedec,spi-nor";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		reg = <0x0>, <0x1>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
+		spi-max-frequency = <108000000>;
+		parallel-memories = /bits/ 64 <0x4000000 0x4000000>; /* 2 x 64 MB */
+
+		partition@0 { label = "qspi-boot";    reg = <0x00000000 0x00100000>; };
+		partition@1 { label = "qspi-bootenv"; reg = <0x00100000 0x00040000>; };
+		partition@2 { label = "qspi-kernel";  reg = <0x00140000 0x01600000>; };
+		partition@3 { label = "qspi-spare";   reg = <0x01740000 0x028c0000>; };
+	};
+};
+
+/* ---- I2C1 : board EEPROM (AT24C256) ---- */
+&i2c1 {
+	status = "okay";
+	clock-frequency = <100000>;
+
+	eeprom: eeprom@50 {
+		compatible = "atmel,24c256";
+		reg = <0x50>;
+		pagesize = <64>;
+	};
+};
+
+/* ---- USB 3.0 (DWC3, GT lane) host ---- */
+&dwc3_0 {
+	status = "okay";
+	dr_mode = "host";
+	maximum-speed = "super-speed";
+	snps,dis_u2_susphy_quirk;
+	snps,dis_u3_susphy_quirk;
+};
+
+/* ---- CAN ---- */
+&can0 { status = "okay"; };
+&can1 { status = "okay"; };

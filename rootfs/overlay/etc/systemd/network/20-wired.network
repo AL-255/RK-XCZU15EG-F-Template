@@ -1,0 +1,13 @@
+[Match]
+Name=en* eth*
+
+[Network]
+DHCP=yes
+# Fallback static address (vendor convention) if no DHCP server answers.
+# Uncomment to use:
+#Address=192.168.1.100/24
+#Gateway=192.168.1.1
+#DNS=192.168.1.1
+
+[DHCPv4]
+RouteMetric=100

@@ -1,0 +1,35 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * RK-XCZU15EG-F  -  example full-reconfiguration overlay.
+ *
+ * Programs the PL with the named bitstream and declares one AXI-GPIO so Linux
+ * binds the gpio-xilinx driver to it.  Adjust:
+ *   - firmware-name : your .bit.bin in /lib/firmware
+ *   - reg base      : the address Vivado assigned the AXI-GPIO (address editor)
+ *   - gpio-width / all-outputs : to match your IP configuration
+ *
+ * Compile + apply on the board:
+ *   dtc -@ -I dts -O dtb -o blinky.dtbo blinky-axi-gpio.dtso
+ *   mkdir -p /sys/kernel/config/device-tree/overlays/blinky
+ *   cat blinky.dtbo > /sys/kernel/config/device-tree/overlays/blinky/dtbo
+ */
+
+&fpga_full {
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	firmware-name = "rk_xczu15eg_f.bit.bin";
+
+	axi_gpio_led: gpio@a0000000 {
+		compatible = "xlnx,axi-gpio-2.0", "xlnx,xps-gpio-1.00.a";
+		reg = <0x0 0xa0000000 0x0 0x10000>;
+		xlnx,all-outputs = <0x1>;
+		xlnx,gpio-width = <0x4>;
+		xlnx,gpio2-width = <0x20>;
+		xlnx,is-dual = <0x0>;
+		#gpio-cells = <0x2>;
+		gpio-controller;
+	};
+};
