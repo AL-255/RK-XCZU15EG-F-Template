@@ -25,10 +25,26 @@ make -C "$UB" xilinx_zynqmp_virt_defconfig
 log "Building U-Boot"
 # Pass BL31 so binman's optional flash.bin/itb step is satisfied; the artefact
 # we actually consume is u-boot.elf, combined with BL31 by bootgen later.
+# U-Boot's *own* control DTB decides which UART its console lands on (via
+# /chosen/stdout-path -> the serialN alias).  xilinx_zynqmp_virt_defconfig is
+# CONFIG_OF_SEPARATE + CONFIG_OF_BOARD: with our FSBL boot chain nothing hands
+# U-Boot a DTB at runtime, so it uses the one built into u-boot.elf.  An
+# in-tree eval-board DT (k26 -> serial1, zcu100/zcu102, ...) does NOT match this
+# board's serial map, so U-Boot prints to the wrong PS UART and looks hung.
+#
+# Faithful approach (same as the factory PetaLinux build): feed U-Boot the
+# board's OWN device tree as its control DTB, so its serial aliases match the
+# kernel's exactly (serial0 = PS UART0 = the USB-UART console).  EXT_DTB
+# overrides the appended/embedded DTB; the board DTB is produced by the
+# preceding `make devicetree` step (board/device-tree/system-user.dtsi pins the
+# serial0..3 aliases to match board/hw-handoff, see gen_devicetree.sh).
+UBOOT_EXT_DTB="${UBOOT_EXT_DTB:-$OUT_DIR/system.dtb}"
+[ -r "$UBOOT_EXT_DTB" ] || die "board DTB not found: $UBOOT_EXT_DTB - run 'make devicetree' before 'make boot'"
+log "U-Boot control DTB (EXT_DTB) = $UBOOT_EXT_DTB"
 make -C "$UB" -j"$(nproc)" \
      BL31="${OUT_DIR}/bl31.elf" \
-     DEVICE_TREE="${UBOOT_DEVICE_TREE:-zynqmp-sm-k26-revA}" || \
-make -C "$UB" -j"$(nproc)" u-boot.elf      # fallback: just the ELF we need
+     EXT_DTB="$UBOOT_EXT_DTB" || \
+make -C "$UB" -j"$(nproc)" EXT_DTB="$UBOOT_EXT_DTB" u-boot.elf   # fallback: just the ELF
 
 cp "$UB/u-boot.elf" "$OUT_DIR/u-boot.elf"
 log "U-Boot -> $OUT_DIR/u-boot.elf"

@@ -79,7 +79,7 @@ log "using archive keyring: $KEYRING"
 # --- package set -------------------------------------------------------------
 PKGS="openssh-server,sudo,ifupdown,isc-dhcp-client,iproute2,iputils-ping,"
 PKGS+="netbase,ca-certificates,locales,less,nano,vim-tiny,bash-completion,"
-PKGS+="systemd-sysv,udev,kmod,dbus,htop,curl,wget,rsync,usbutils,pciutils,"
+PKGS+="systemd-sysv,systemd-resolved,udev,kmod,dbus,htop,curl,wget,rsync,usbutils,pciutils,"
 PKGS+="i2c-tools,can-utils,ethtool,gpiod,device-tree-compiler,python3,"
 PKGS+="e2fsprogs,parted,file,$KEYRING_PKG"
 
@@ -121,6 +121,14 @@ systemctl enable serial-getty@ttyPS0.service 2>/dev/null || true
 
 # networking: DHCP on whatever the kernel calls the GEM3 port (end0/eth0)
 systemctl enable systemd-networkd 2>/dev/null || true
+
+# DNS resolution: the base image ships a STATIC /etc/resolv.conf pointing at the
+# systemd-resolved stub (nameserver 127.0.0.53), but minbase does not install
+# resolved - so nothing listens on 127.0.0.53 and every lookup fails even though
+# networkd has the DHCP nameservers.  Install systemd-resolved (added to PKGS),
+# enable it, and point resolv.conf at its stub so networkd's DNS is actually used.
+systemctl enable systemd-resolved 2>/dev/null || true
+ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 2>/dev/null || true
 
 # locales
 sed -i 's/^# *en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen 2>/dev/null || true

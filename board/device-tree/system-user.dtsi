@@ -32,6 +32,29 @@
 		stdout-path = "serial0:115200n8";
 	};
 
+	/*
+	 * Serial alias map - MUST keep serial0 = PS UART0.
+	 *
+	 * The board's USB-UART console is PS UART0 (ttyPS0, 0xFF000000), and the
+	 * factory PetaLinux device tree pins  serial0 = &uart0  accordingly
+	 * (image_15eg.bsp: system-top.dts).  The standalone device-tree-xlnx
+	 * generator we use (2025.x) instead orders the PL axi_uart16550 IPs first,
+	 * emitting  serial0 = &axi_uart16550_0  (a PL fabric UART at 0x80020000)
+	 * and demoting PS UART0 to serial3.  Because /chosen/stdout-path = "serial0"
+	 * and the kernel command line uses `earlycon`, that mis-ordering points
+	 * both U-Boot's console and the kernel's earlycon at an unconfigured PL
+	 * UART -> U-Boot looks hung after BL31 and Linux can hang in earlycon.
+	 *
+	 * Re-pin the console UARTs to the PS block here (layered last, so this wins
+	 * over the generated aliases).  Anchoring to the always-present PS uart0/1
+	 * keeps this correct even if the PL design is regenerated without those
+	 * axi_uart16550 cores.
+	 */
+	aliases {
+		serial0 = &uart0;   /* PS UART0 -> ttyPS0 (console) */
+		serial1 = &uart1;   /* PS UART1 -> ttyPS1            */
+	};
+
 	leds {
 		compatible = "gpio-leds";
 
@@ -127,6 +150,43 @@
 		partition@2 { label = "qspi-kernel";  reg = <0x00140000 0x01600000>; };
 		partition@3 { label = "qspi-spare";   reg = <0x01740000 0x028c0000>; };
 	};
+};
+
+/* ==== PL fabric: DISABLED until a bitstream is loaded =======================
+ *
+ * This board boots with the PL UNCONFIGURED - the template deliberately leaves
+ * the bitstream out of BOOT.BIN and programs the fabric later from Linux via
+ * the ZynqMP FPGA manager (see docs/04-bitstream-from-ps.md).  But the
+ * generated pl.dtsi leaves every PL IP at the default status="okay":
+ *
+ *     amba_pl (pl-bus)
+ *       axi_gpio_0    @ 0x8000_0000
+ *       axi_gpio_1    @ 0x8001_0000
+ *       axi_uart16550_0 @ 0x8002_0000   <- ns16550a
+ *       axi_uart16550_1 @ 0x8003_0000   <- ns16550a
+ *       ddr4_0 (PL MIG)
+ *
+ * and gem0's secondary-Ethernet path runs through a PL "gmii_to_rgmii" core.
+ * While the fabric is dark, any access to the 0x8000_0000 PL AXI window never
+ * returns: the kernel froze the CPU the instant the 8250/ns16550 driver probed
+ * axi_uart16550_0 - right after the two PS UARTs - producing the RCU stall /
+ * unresponsive-secondary-core hang.  (The factory image embeds the bitstream in
+ * BOOT.BIN, so its PL was always live and it never hit this.)
+ *
+ * Keep the whole PL bus and the PL-routed GEM disabled at boot.  When you load
+ * a bitstream, the accompanying run-time device-tree overlay (see examples/)
+ * re-adds exactly the PL nodes that design needs, now that the fabric is live.
+ */
+&amba_pl {
+	status = "disabled";
+};
+
+/* SECONDARY Ethernet (PS GEM0 -> PL gmii-to-rgmii -> 2nd RTL8211F): the MDIO
+ * path lives in the PL, so this NIC only works once a bitstream with the
+ * gmii_to_rgmii core is loaded.  Off at boot; the primary NIC is gem3 (PS PHY,
+ * no PL needed) and stays enabled. */
+&gem0 {
+	status = "disabled";
 };
 
 /* ---- I2C1 : board EEPROM (AT24C256) ---- */
