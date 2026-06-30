@@ -1,5 +1,7 @@
 # RK-XCZU15EG-F — Board Support Package & Debian/Ubuntu Image Template
 
+![RK-XCZU15EG-F development board](docs/board.jpg)
+
 A reusable, scripted **board support package (BSP)** for the **RK-XCZU15EG-F**
 development board (RIGUKE / "日固刻", a Zynq UltraScale+ MPSoC board based on the
 **XCZU15EG-FFVB1156-2-I**, pin-compatible with the ALINX/正点原子 MPSoC-P5 family).
