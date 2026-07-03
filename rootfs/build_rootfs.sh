@@ -79,8 +79,13 @@ log "using archive keyring: $KEYRING"
 # --- package set -------------------------------------------------------------
 PKGS="openssh-server,sudo,ifupdown,isc-dhcp-client,iproute2,iputils-ping,"
 PKGS+="netbase,ca-certificates,locales,less,nano,vim-tiny,bash-completion,"
-PKGS+="systemd-sysv,systemd-resolved,udev,kmod,dbus,htop,curl,wget,rsync,usbutils,pciutils,"
+PKGS+="systemd-sysv,systemd-resolved,systemd-timesyncd,udev,kmod,dbus,htop,curl,wget,rsync,usbutils,pciutils,"
 PKGS+="i2c-tools,can-utils,ethtool,gpiod,device-tree-compiler,python3,"
+# inetutils client tools (telnet/ftp/traceroute).  NOTE: Debian has no single
+# "inetutils" package - it is split into inetutils-*; we ship the clients only
+# (the *-telnetd/*-ftpd/*-inetd/*-syslogd daemons are deliberately left out of a
+# default image, and inetutils-tools conflicts with the essential `hostname`).
+PKGS+="inetutils-telnet,inetutils-ftp,inetutils-traceroute,"
 PKGS+="e2fsprogs,parted,file,$KEYRING_PKG"
 
 log "Building $ROOTFS_DISTRO/$ROOTFS_SUITE arm64 rootfs (TMPDIR=$TMPDIR)"
@@ -129,6 +134,13 @@ systemctl enable systemd-networkd 2>/dev/null || true
 # enable it, and point resolv.conf at its stub so networkd's DNS is actually used.
 systemctl enable systemd-resolved 2>/dev/null || true
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 2>/dev/null || true
+
+# Time sync: this board has no battery-backed RTC, so a fresh boot starts with
+# the clock at the image build time.  Until it is corrected, apt rejects the
+# archive Release file as "not valid yet" and every `apt update`/`apt install`
+# fails.  Enable systemd-timesyncd (NTP) so the clock self-corrects once the
+# network is up, making apt work out of the box.
+systemctl enable systemd-timesyncd 2>/dev/null || true
 
 # locales
 sed -i 's/^# *en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen 2>/dev/null || true
